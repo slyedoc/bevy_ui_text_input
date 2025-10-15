@@ -48,7 +48,8 @@ pub struct TextInputPlugin;
 impl Plugin for TextInputPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_message::<SubmitText>()
-            .add_plugins(bevy::input_focus::InputDispatchPlugin)
+            // Note: InputDispatchPlugin should be added by DefaultPlugins or another Bevy plugin
+            // .add_plugins(bevy::input_focus::InputDispatchPlugin)
             .init_resource::<TextInputGlobalState>()
             .init_resource::<TextInputPipeline>()
             .init_resource::<clipboard::Clipboard>()
