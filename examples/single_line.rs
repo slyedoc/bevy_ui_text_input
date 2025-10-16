@@ -1,6 +1,6 @@
 //! minimal text input example
 
-use bevy::{color::palettes::css::NAVY, prelude::*};
+use bevy::{color::palettes::css::NAVY, prelude::*, ui_widgets::observe};
 use bevy_ui_text_input::{
     SubmitText, TextInputMode, TextInputNode, TextInputPlugin, TextInputPrompt,
 };
@@ -8,8 +8,7 @@ use bevy_ui_text_input::{
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, TextInputPlugin))
-        .add_systems(Startup, setup)
-        .add_systems(Update, update)
+        .add_systems(Startup, setup)        
         .run();
 }
 
@@ -46,14 +45,12 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 ..default()
             },
             BackgroundColor(NAVY.into()),
+            observe(|event: On<SubmitText>, mut query: Query<&mut Text>| {
+                //let e = event.entity;
+                for mut text in query.iter_mut() {
+                    text.0 = event.text.clone();
+                }        
+            })
         ))
         .with_child(Text::new("submit something.."));
-}
-
-fn update(mut events: MessageReader<SubmitText>, mut query: Query<&mut Text>) {
-    for event in events.read() {
-        for mut text in query.iter_mut() {
-            text.0 = event.text.clone();
-        }
-    }
 }

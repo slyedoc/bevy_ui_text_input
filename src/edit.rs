@@ -14,7 +14,6 @@ use crate::text_input_pipeline::TextInputPipeline;
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::message::MessageReader;
-use bevy::ecs::message::MessageWriter;
 use bevy::ecs::observer::On;
 use bevy::ecs::system::Commands;
 use bevy::ecs::system::Query;
@@ -548,7 +547,7 @@ pub fn process_text_input_queues(
         Option<&TextInputFilter>,
     )>,
     mut text_input_pipeline: ResMut<TextInputPipeline>,
-    mut submit_writer: MessageWriter<SubmitText>,
+    mut commands: Commands,    
     mut clipboard: ResMut<Clipboard>,
 ) {
     let font_system = &mut text_input_pipeline.font_system;
@@ -562,7 +561,7 @@ pub fn process_text_input_queues(
             match action {
                 TextInputAction::Submit => {
                     let text = editor.with_buffer(crate::get_text);
-                    submit_writer.write(SubmitText { entity, text });
+                    commands.trigger(SubmitText { entity, text });                    
                     if node.clear_on_submit {
                         actions_queue.add_front(TextInputAction::Edit(TextInputEdit::Delete));
                         actions_queue.add_front(TextInputAction::Edit(TextInputEdit::SelectAll));

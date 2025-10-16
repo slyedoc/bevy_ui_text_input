@@ -1,6 +1,6 @@
 //! minimal text input example
 
-use bevy::{color::palettes::css::NAVY, input_focus::InputFocus, prelude::*};
+use bevy::{color::palettes::css::NAVY, input_focus::InputFocus, prelude::*, ui_widgets::observe};
 use bevy_ui_text_input::{
     SubmitText, TextInputFilter, TextInputMode, TextInputNode, TextInputPlugin,
 };
@@ -9,7 +9,6 @@ fn main() {
     App::new()
         .add_plugins((DefaultPlugins, TextInputPlugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, reciever)
         .run();
 }
 
@@ -35,6 +34,10 @@ fn setup(mut commands: Commands, mut active_input: ResMut<InputFocus>) {
                 ..default()
             },
             BackgroundColor(NAVY.into()),
+            observe(|event: On<SubmitText>| {
+                let d: f64 = event.text.parse().unwrap();
+                println!("decimal: {d}");   
+            })
         ))
         .id();
 
@@ -51,11 +54,4 @@ fn setup(mut commands: Commands, mut active_input: ResMut<InputFocus>) {
             ..Default::default()
         })
         .add_child(input_entity);
-}
-
-fn reciever(mut events: MessageReader<SubmitText>) {
-    for event in events.read() {
-        let d: f64 = event.text.parse().unwrap();
-        println!("decimal: {d}");
-    }
 }

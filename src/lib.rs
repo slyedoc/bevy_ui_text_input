@@ -14,8 +14,8 @@ use bevy::color::palettes::css::SKY_BLUE;
 use bevy::color::palettes::tailwind::GRAY_400;
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
+use bevy::ecs::event::EntityEvent;
 use bevy::ecs::lifecycle::HookContext;
-use bevy::ecs::message::Message;
 use bevy::ecs::observer::Observer;
 use bevy::ecs::query::Changed;
 use bevy::ecs::resource::Resource;
@@ -47,9 +47,8 @@ pub struct TextInputPlugin;
 
 impl Plugin for TextInputPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_message::<SubmitText>()
-            // Note: InputDispatchPlugin should be added by DefaultPlugins or another Bevy plugin
-            // .add_plugins(bevy::input_focus::InputDispatchPlugin)
+        app
+            .add_plugins(bevy::input_focus::InputDispatchPlugin)
             .init_resource::<TextInputGlobalState>()
             .init_resource::<TextInputPipeline>()
             .init_resource::<clipboard::Clipboard>()
@@ -158,7 +157,7 @@ fn on_remove_unfocus(mut world: DeferredWorld, context: HookContext) {
 pub type TextSubmitEvent = SubmitText;
 
 /// Sent when a text input submits its text
-#[derive(Message)]
+#[derive(EntityEvent)]
 pub struct SubmitText {
     /// The text input entity that submitted the text
     pub entity: Entity,

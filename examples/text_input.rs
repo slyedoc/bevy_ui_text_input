@@ -1,8 +1,7 @@
 //! text input example
 
 use bevy::{
-    color::palettes::css::{LIGHT_GOLDENROD_YELLOW, MAROON, RED},
-    prelude::*,
+    color::palettes::css::{LIGHT_GOLDENROD_YELLOW, MAROON, RED}, feathers::FeathersPlugin, prelude::*, ui_widgets::observe
 };
 use bevy_ui_text_input::{
     SubmitText, TextInputBuffer, TextInputMode, TextInputNode, TextInputPlugin, TextInputPrompt,
@@ -11,9 +10,12 @@ use bevy_ui_text_input::{
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, TextInputPlugin))
+        .add_plugins((DefaultPlugins, 
+            FeathersPlugin,
+            TextInputPlugin
+        ))
         .add_systems(Startup, setup)
-        .add_systems(Update, (button_system, submit))
+        .add_systems(Update, button_system)
         .run();
 }
 
@@ -85,6 +87,11 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
             },
             TextInputStyle::default(),
             BackgroundColor(Color::srgb(0., 0., 0.2)),
+            observe(|event: On<SubmitText>, mut query: Query<&mut Text, With<OutputMarker>>| {
+                let mut text = query.single_mut().unwrap();
+                info!("Submitted: {}", event.text);
+                text.0 = event.text.clone();
+            })
         ))
         .id();
 
@@ -418,10 +425,4 @@ fn button_system(
     }
 }
 
-fn submit(mut events: MessageReader<SubmitText>, mut query: Query<&mut Text, With<OutputMarker>>) {
-    for event in events.read() {
-        for mut text in query.iter_mut() {
-            text.0 = event.text.clone();
-        }
-    }
-}
+

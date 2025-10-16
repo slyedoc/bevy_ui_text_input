@@ -40,4 +40,4 @@ codegen-units = 4
 opt-level = 0
 
 [dev-dependencies]
-bevy = { git = "https://github.com/slyedoc/bevy", branch = "feathers_scroll" }
+bevy = { git = "https://github.com/slyedoc/bevy", branch = "feathers_scroll", features = ["experimental_bevy_feathers"] }

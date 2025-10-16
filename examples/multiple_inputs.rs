@@ -5,6 +5,7 @@ use bevy::{
     input_focus::InputFocus,
     platform::collections::HashMap,
     prelude::*,
+    ui_widgets::observe,
 };
 use bevy_ui_text_input::{
     SubmitText, TextInputFilter, TextInputMode, TextInputNode, TextInputPlugin, TextInputPrompt,
@@ -78,6 +79,14 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                                 offset: Val::Px(2.),
                                 color: GREY.into(),
                             },
+                            observe(
+                                |event: On<SubmitText>,
+                                 map: Res<InputMap>,
+                                 mut text_query: Query<&mut Text>| {
+                                    let out = map[&event.entity];
+                                    text_query.get_mut(out).unwrap().0 = event.text.clone();
+                                },
+                            ),
                         ));
                         if let Some(filter) = filter {
                             input.insert(filter);
@@ -94,13 +103,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(map);
 }
 
-fn update(
-    input_focus: Res<InputFocus>,
-    mut events: MessageReader<SubmitText>,
-    map: Res<InputMap>,
-    mut text_query: Query<&mut Text>,
-    mut outline_query: Query<(Entity, &mut Outline)>,
-) {
+fn update(input_focus: Res<InputFocus>, mut outline_query: Query<(Entity, &mut Outline)>) {
     if input_focus.is_changed() {
         for (entity, mut outline) in outline_query.iter_mut() {
             if input_focus.0.is_some_and(|active| active == entity) {
@@ -109,10 +112,5 @@ fn update(
                 outline.color = GREY.into();
             }
         }
-    }
-
-    for event in events.read() {
-        let out = map[&event.entity];
-        text_query.get_mut(out).unwrap().0 = event.text.clone();
     }
 }
