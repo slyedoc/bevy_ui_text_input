@@ -39,9 +39,12 @@ use edit::{
 };
 use render::{extract_text_input_nodes, extract_text_input_prompts};
 use text_input_pipeline::{
-    TextInputPipeline, remove_dropped_font_atlas_sets_from_text_input_pipeline,
+    remove_dropped_font_atlas_sets_from_text_input_pipeline,
     text_input_prompt_system, text_input_system,
 };
+
+// Re-export for public use
+pub use text_input_pipeline::TextInputPipeline;
 
 pub struct TextInputPlugin;
 
