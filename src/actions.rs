@@ -138,7 +138,9 @@ pub fn apply_text_input_edit(
             editor.action(Action::Drag { x, y });
         }
         TextInputEdit::Scroll { lines } => {
-            editor.action(Action::Scroll { lines });
+            // cosmic_text 0.15 uses pixels instead of lines
+            // Estimate ~20 pixels per line
+            editor.action(Action::Scroll { pixels: (lines * 20) as f32 });
         }
         TextInputEdit::Paste(text) => {
             if max_chars.is_none_or(|max| editor.with_buffer(buffer_len) + text.len() <= max) {

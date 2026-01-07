@@ -21,13 +21,25 @@ use bevy::math::UVec2;
 use bevy::math::Vec2;
 use bevy::platform::collections::HashMap;
 use bevy::text::Font;
-use bevy::text::FontAtlasSet;
+use bevy::text::FontAtlas;
+use bevy::text::FontAtlasKey;
 use bevy::text::FontSmoothing;
+use bevy::text::Justify;
 use bevy::text::LineBreak;
-use bevy::text::LineHeight;
 use bevy::text::TextBounds;
 use bevy::text::TextError;
 use bevy::text::TextFont;
+use bevy::text::add_glyph_to_atlas;
+use bevy::text::get_glyph_atlas_info;
+
+fn justify_to_align(justify: Justify) -> cosmic_text::Align {
+    match justify {
+        Justify::Left => cosmic_text::Align::Left,
+        Justify::Center => cosmic_text::Align::Center,
+        Justify::Right => cosmic_text::Align::Right,
+        Justify::Justified => cosmic_text::Align::Justified,
+    }
+}
 use bevy::ui::ComputedNode;
 use cosmic_text;
 use cosmic_text::Buffer;
@@ -40,7 +52,7 @@ pub struct TextInputPipeline {
     pub(crate) handle_to_font_id_map: HashMap<AssetId<Font>, (cosmic_text::fontdb::ID, Arc<str>)>,
     pub font_system: cosmic_text::FontSystem,
     pub(crate) swash_cache: cosmic_text::SwashCache,
-    pub(crate) font_atlas_sets: HashMap<AssetId<Font>, FontAtlasSet>,
+    pub(crate) font_atlas_sets: HashMap<FontAtlasKey, Vec<FontAtlas>>,
 }
 
 impl Default for TextInputPipeline {
@@ -131,10 +143,8 @@ pub fn text_input_system(
                 height: Some(node.size().y),
             };
 
-            let line_height = match text_font.line_height {
-                LineHeight::Px(h) => h,
-                LineHeight::RelativeToFont(r) => r * text_font.font_size,
-            };
+            // LineHeight::default() is RelativeToFont(1.2)
+            let line_height = 1.2 * text_font.font_size;
 
             let result = editor.editor.with_buffer_mut(|buffer| {
                 let TextInputPipeline {
@@ -168,11 +178,8 @@ pub fn text_input_system(
                     .metrics(metrics);
 
                 let text = crate::get_text(buffer);
-                buffer.set_text(font_system, &text, &attrs, cosmic_text::Shaping::Advanced);
-                let align = Some(input.justification.into());
-                for buffer_line in buffer.lines.iter_mut() {
-                    buffer_line.set_align(align);
-                }
+                let align = Some(justify_to_align(input.justification));
+                buffer.set_text(font_system, &text, &attrs, cosmic_text::Shaping::Advanced, align);
 
                 Ok(())
             });
@@ -240,6 +247,8 @@ pub fn text_input_system(
                                 layout_glyph
                             };
 
+                            let physical_glyph = layout_glyph.physical((0., 0.), 1.);
+
                             let TextInputPipeline {
                                 font_system,
                                 swash_cache,
@@ -247,15 +256,19 @@ pub fn text_input_system(
                                 ..
                             } = &mut *text_input_pipeline;
 
-                            let font_atlas_set = font_atlas_sets.entry(font_id).or_default();
+                            let font_atlases = font_atlas_sets
+                                .entry(FontAtlasKey(
+                                    font_id,
+                                    physical_glyph.cache_key.font_size_bits,
+                                    font_smoothing,
+                                ))
+                                .or_default();
 
-                            let physical_glyph = layout_glyph.physical((0., 0.), 1.);
-
-                            let atlas_info = font_atlas_set
-                                .get_glyph_atlas_info(physical_glyph.cache_key, font_smoothing)
+                            let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
                                 .map(Ok)
                                 .unwrap_or_else(|| {
-                                    font_atlas_set.add_glyph_to_atlas(
+                                    add_glyph_to_atlas(
+                                        font_atlases,
                                         &mut texture_atlases,
                                         &mut textures,
                                         font_system,
@@ -305,7 +318,7 @@ pub fn text_input_system(
                 Err(TextError::NoSuchFont) => {
                     // There was an error processing the text layout, try again next frame
                 }
-                Err(e @ (TextError::FailedToAddGlyph(_) | TextError::FailedToGetGlyphImage(_))) => {
+                Err(e) => {
                     panic!("Fatal error when processing text: {e}.");
                 }
                 Ok(()) => {
@@ -362,10 +375,8 @@ pub fn text_input_prompt_system(
 
             let font = prompt.font.as_ref().unwrap_or(text_font.as_ref());
 
-            let line_height = match text_font.line_height {
-                LineHeight::Px(h) => h,
-                LineHeight::RelativeToFont(r) => r * font.font_size,
-            };
+            // LineHeight::default() is RelativeToFont(1.2)
+            let line_height = 1.2 * font.font_size;
 
             let metrics = Metrics::new(font.font_size, line_height)
                 .scale(node.inverse_scale_factor().recip());
@@ -407,17 +418,14 @@ pub fn text_input_prompt_system(
                 .weight(face_info.weight)
                 .metrics(metrics);
 
+            let align = Some(justify_to_align(input.justification));
             buffer.set_text(
                 font_system,
                 &prompt.text,
                 &attrs,
                 cosmic_text::Shaping::Advanced,
+                align,
             );
-
-            let align = Some(input.justification.into());
-            for buffer_line in buffer.lines.iter_mut() {
-                buffer_line.set_align(align);
-            }
 
             buffer.shape_until_scroll(font_system, false);
 
@@ -448,6 +456,8 @@ pub fn text_input_prompt_system(
                             layout_glyph
                         };
 
+                        let physical_glyph = layout_glyph.physical((0., 0.), 1.);
+
                         let TextInputPipeline {
                             font_system,
                             swash_cache,
@@ -455,15 +465,19 @@ pub fn text_input_prompt_system(
                             ..
                         } = &mut *text_input_pipeline;
 
-                        let font_atlas_set = font_atlas_sets.entry(font_id).or_default();
+                        let font_atlases = font_atlas_sets
+                            .entry(FontAtlasKey(
+                                font_id,
+                                physical_glyph.cache_key.font_size_bits,
+                                font_smoothing,
+                            ))
+                            .or_default();
 
-                        let physical_glyph = layout_glyph.physical((0., 0.), 1.);
-
-                        let atlas_info = font_atlas_set
-                            .get_glyph_atlas_info(physical_glyph.cache_key, font_smoothing)
+                        let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
                             .map(Ok)
                             .unwrap_or_else(|| {
-                                font_atlas_set.add_glyph_to_atlas(
+                                add_glyph_to_atlas(
+                                    font_atlases,
                                     &mut texture_atlases,
                                     &mut textures,
                                     font_system,
@@ -508,7 +522,7 @@ pub fn text_input_prompt_system(
                     editor.prompt_buffer = None;
                     // There was an error processing the text layout, try again next frame
                 }
-                Err(e @ (TextError::FailedToAddGlyph(_) | TextError::FailedToGetGlyphImage(_))) => {
+                Err(e) => {
                     panic!("Fatal error when processing text: {e}.");
                 }
                 Ok(()) => {
@@ -526,7 +540,7 @@ pub fn remove_dropped_font_atlas_sets_from_text_input_pipeline(
 ) {
     for event in font_events.read() {
         if let AssetEvent::Removed { id } = event {
-            text_input_pipeline.font_atlas_sets.remove(id);
+            text_input_pipeline.font_atlas_sets.retain(|key, _| key.0 != *id);
         }
     }
 }
