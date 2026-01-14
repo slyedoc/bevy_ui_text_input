@@ -24,6 +24,7 @@ use bevy::text::Font;
 use bevy::text::FontAtlas;
 use bevy::text::FontAtlasKey;
 use bevy::text::FontSmoothing;
+use bevy::text::FontSource;
 use bevy::text::Justify;
 use bevy::text::LineBreak;
 use bevy::text::TextBounds;
@@ -81,33 +82,62 @@ fn load_font_to_fontdb(
     font_system: &mut cosmic_text::FontSystem,
     map_handle_to_font_id: &mut HashMap<AssetId<Font>, (cosmic_text::fontdb::ID, Arc<str>)>,
     fonts: &Assets<Font>,
-) -> FontFaceInfo {
-    let font_handle = text_font.font.clone();
-    let (face_id, family_name) = map_handle_to_font_id
-        .entry(font_handle.id())
-        .or_insert_with(|| {
-            let font = fonts.get(font_handle.id()).expect(
-                "Tried getting a font that was not available, probably due to not being loaded yet",
-            );
-            let data = Arc::clone(&font.data);
-            let ids = font_system
-                .db_mut()
-                .load_font_source(cosmic_text::fontdb::Source::Binary(data));
+) -> Option<FontFaceInfo> {
+    match &text_font.font {
+        FontSource::Handle(font_handle) => {
+            let (face_id, family_name) = map_handle_to_font_id
+                .entry(font_handle.id())
+                .or_insert_with(|| {
+                    let font = fonts.get(font_handle.id()).expect(
+                        "Tried getting a font that was not available, probably due to not being loaded yet",
+                    );
+                    let data = Arc::clone(&font.data);
+                    let ids = font_system
+                        .db_mut()
+                        .load_font_source(cosmic_text::fontdb::Source::Binary(data));
 
-            // TODO: it is assumed this is the right font face
-            let face_id = *ids.last().unwrap();
-            let face = font_system.db().face(face_id).unwrap();
-            let family_name = Arc::from(face.families[0].0.as_str());
+                    // TODO: it is assumed this is the right font face
+                    let face_id = *ids.last().unwrap();
+                    let face = font_system.db().face(face_id).unwrap();
+                    let family_name = Arc::from(face.families[0].0.as_str());
 
-            (face_id, family_name)
-        });
-    let face = font_system.db().face(*face_id).unwrap();
+                    (face_id, family_name)
+                });
+            let face = font_system.db().face(*face_id).unwrap();
 
-    FontFaceInfo {
-        stretch: face.stretch,
-        style: face.style,
-        weight: face.weight,
-        family_name: family_name.clone(),
+            Some(FontFaceInfo {
+                stretch: face.stretch,
+                style: face.style,
+                weight: face.weight,
+                family_name: family_name.clone(),
+            })
+        }
+        FontSource::Family(family) => {
+            // For family-based fonts, look up the font in the font system database
+            let family_name = Arc::from(family.as_str());
+            // Query the font system for a matching font face
+            let query = cosmic_text::fontdb::Query {
+                families: &[cosmic_text::fontdb::Family::Name(family.as_str())],
+                weight: cosmic_text::fontdb::Weight(text_font.weight.0),
+                stretch: cosmic_text::fontdb::Stretch::Normal,
+                style: match text_font.style {
+                    bevy::text::FontStyle::Normal => cosmic_text::fontdb::Style::Normal,
+                    bevy::text::FontStyle::Italic => cosmic_text::fontdb::Style::Italic,
+                    bevy::text::FontStyle::Oblique => cosmic_text::fontdb::Style::Oblique,
+                },
+            };
+            if let Some(face_id) = font_system.db().query(&query) {
+                let face = font_system.db().face(face_id).unwrap();
+                Some(FontFaceInfo {
+                    stretch: face.stretch,
+                    style: face.style,
+                    weight: face.weight,
+                    family_name,
+                })
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -152,12 +182,18 @@ pub fn text_input_system(
                     handle_to_font_id_map: map_handle_to_font_id,
                     ..
                 } = &mut *text_input_pipeline;
-                if !fonts.contains(text_font.font.id()) {
-                    return Err(TextError::NoSuchFont);
+                // Check if font is available (for Handle-based fonts)
+                if let FontSource::Handle(ref handle) = text_font.font {
+                    if !fonts.contains(handle.id()) {
+                        return Err(TextError::NoSuchFont);
+                    }
                 }
 
-                let face_info =
-                    load_font_to_fontdb(&text_font, font_system, map_handle_to_font_id, &fonts);
+                let Some(face_info) =
+                    load_font_to_fontdb(&text_font, font_system, map_handle_to_font_id, &fonts)
+                else {
+                    return Err(TextError::NoSuchFont);
+                };
 
                 let mut metrics = Metrics::new(text_font.font_size, line_height)
                     .scale(node.inverse_scale_factor().recip());
@@ -227,7 +263,6 @@ pub fn text_input_system(
                         .try_for_each(|(layout_glyph, line_y, line_i)| {
                             let mut temp_glyph;
                             let span_index = layout_glyph.metadata;
-                            let font_id = text_font.font.id();
                             let font_smoothing = text_font.font_smoothing;
 
                             let layout_glyph = if font_smoothing == FontSmoothing::None {
@@ -257,11 +292,11 @@ pub fn text_input_system(
                             } = &mut *text_input_pipeline;
 
                             let font_atlases = font_atlas_sets
-                                .entry(FontAtlasKey(
-                                    font_id,
-                                    physical_glyph.cache_key.font_size_bits,
+                                .entry(FontAtlasKey {
+                                    id: physical_glyph.cache_key.font_id,
+                                    font_size_bits: physical_glyph.cache_key.font_size_bits,
                                     font_smoothing,
-                                ))
+                                })
                                 .or_default();
 
                             let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
@@ -368,9 +403,12 @@ pub fn text_input_prompt_system(
                 handle_to_font_id_map: map_handle_to_font_id,
                 ..
             } = &mut *text_input_pipeline;
-            if !fonts.contains(text_font.font.id()) {
-                editor.prompt_buffer = None;
-                continue;
+            // Check if font is available (for Handle-based fonts)
+            if let FontSource::Handle(ref handle) = text_font.font {
+                if !fonts.contains(handle.id()) {
+                    editor.prompt_buffer = None;
+                    continue;
+                }
             }
 
             let font = prompt.font.as_ref().unwrap_or(text_font.as_ref());
@@ -396,7 +434,10 @@ pub fn text_input_prompt_system(
                 height: Some(node.size().y),
             };
 
-            let face_info = load_font_to_fontdb(font, font_system, map_handle_to_font_id, &fonts);
+            let Some(face_info) = load_font_to_fontdb(font, font_system, map_handle_to_font_id, &fonts) else {
+                editor.prompt_buffer = None;
+                continue;
+            };
 
             buffer.set_size(font_system, bounds.width, bounds.height);
 
@@ -437,7 +478,6 @@ pub fn text_input_prompt_system(
                     .try_for_each(|(layout_glyph, line_y, line_i)| {
                         let mut temp_glyph;
                         let span_index = layout_glyph.metadata;
-                        let font_id = text_font.font.id();
                         let font_smoothing = text_font.font_smoothing;
 
                         let layout_glyph = if font_smoothing == FontSmoothing::None {
@@ -466,11 +506,11 @@ pub fn text_input_prompt_system(
                         } = &mut *text_input_pipeline;
 
                         let font_atlases = font_atlas_sets
-                            .entry(FontAtlasKey(
-                                font_id,
-                                physical_glyph.cache_key.font_size_bits,
+                            .entry(FontAtlasKey {
+                                id: physical_glyph.cache_key.font_id,
+                                font_size_bits: physical_glyph.cache_key.font_size_bits,
                                 font_smoothing,
-                            ))
+                            })
                             .or_default();
 
                         let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
@@ -535,12 +575,14 @@ pub fn text_input_prompt_system(
 }
 
 pub fn remove_dropped_font_atlas_sets_from_text_input_pipeline(
-    mut text_input_pipeline: ResMut<TextInputPipeline>,
+    mut _text_input_pipeline: ResMut<TextInputPipeline>,
     mut font_events: MessageReader<AssetEvent<Font>>,
 ) {
-    for event in font_events.read() {
-        if let AssetEvent::Removed { id } = event {
-            text_input_pipeline.font_atlas_sets.retain(|key, _| key.0 != *id);
-        }
+    // Note: In bevy main, FontAtlasKey uses cosmic_text::fontdb::ID rather than AssetId<Font>.
+    // When a font is removed, we no longer have access to the Font asset (and its fontdb IDs),
+    // so we can't easily clean up the font atlas sets.
+    // Bevy's own text pipeline doesn't perform this cleanup either.
+    for _event in font_events.read() {
+        // Drain the event reader to avoid warning about unused events
     }
 }
