@@ -62,7 +62,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                                 ..Default::default()
                             },
                             TextFont {
-                                font: assets.load("fonts/FiraMono-Medium.ttf"),
+                                font: assets.load("fonts/FiraMono-Medium.ttf").into(),
                                 font_size: 25.,
                                 ..Default::default()
                             },

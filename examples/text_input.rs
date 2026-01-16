@@ -75,7 +75,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
             },
             TextInputBuffer::default(),
             TextFont {
-                font: assets.load("fonts/FiraSans-Bold.ttf"),
+                font: assets.load("fonts/FiraSans-Bold.ttf").into(),
                 font_size: 25.,
                 ..Default::default()
             },
@@ -157,7 +157,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                                 mut query: Query<&mut TextFont>,
                                 assets: Res<AssetServer>| {
                                 if let Ok(mut text_font) = query.get_mut(editor) {
-                                    text_font.font = assets.load("fonts/FiraSans-Bold.ttf");
+                                    text_font.font = assets.load("fonts/FiraSans-Bold.ttf").into();
                                 }
                             },
                         );
@@ -175,7 +175,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                                   mut query: Query<&mut TextFont>,
                                   assets: Res<AssetServer>| {
                                 if let Ok(mut text_font) = query.get_mut(editor) {
-                                    text_font.font = assets.load("fonts/FiraMono-Medium.ttf");
+                                    text_font.font = assets.load("fonts/FiraMono-Medium.ttf").into();
                                 }
                             },
                         )

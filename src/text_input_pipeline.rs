@@ -138,6 +138,47 @@ fn load_font_to_fontdb(
                 None
             }
         }
+        // Generic font families (Serif, SansSerif, Cursive, Fantasy, Monospace)
+        font_source => {
+            let (fontdb_family, family_name): (cosmic_text::fontdb::Family, Arc<str>) =
+                match font_source {
+                    FontSource::Serif => (cosmic_text::fontdb::Family::Serif, Arc::from("serif")),
+                    FontSource::SansSerif => {
+                        (cosmic_text::fontdb::Family::SansSerif, Arc::from("sans-serif"))
+                    }
+                    FontSource::Cursive => {
+                        (cosmic_text::fontdb::Family::Cursive, Arc::from("cursive"))
+                    }
+                    FontSource::Fantasy => {
+                        (cosmic_text::fontdb::Family::Fantasy, Arc::from("fantasy"))
+                    }
+                    FontSource::Monospace => {
+                        (cosmic_text::fontdb::Family::Monospace, Arc::from("monospace"))
+                    }
+                    _ => unreachable!(),
+                };
+            let query = cosmic_text::fontdb::Query {
+                families: &[fontdb_family],
+                weight: cosmic_text::fontdb::Weight(text_font.weight.0),
+                stretch: cosmic_text::fontdb::Stretch::Normal,
+                style: match text_font.style {
+                    bevy::text::FontStyle::Normal => cosmic_text::fontdb::Style::Normal,
+                    bevy::text::FontStyle::Italic => cosmic_text::fontdb::Style::Italic,
+                    bevy::text::FontStyle::Oblique => cosmic_text::fontdb::Style::Oblique,
+                },
+            };
+            if let Some(face_id) = font_system.db().query(&query) {
+                let face = font_system.db().face(face_id).unwrap();
+                Some(FontFaceInfo {
+                    stretch: face.stretch,
+                    style: face.style,
+                    weight: face.weight,
+                    family_name,
+                })
+            } else {
+                None
+            }
+        }
     }
 }
 
