@@ -29,6 +29,7 @@ use bevy::text::Justify;
 use bevy::text::LineBreak;
 use bevy::text::TextBounds;
 use bevy::text::TextError;
+use bevy::text::RemSize;
 use bevy::text::TextFont;
 use bevy::text::add_glyph_to_atlas;
 use bevy::text::get_glyph_atlas_info;
@@ -42,6 +43,7 @@ fn justify_to_align(justify: Justify) -> cosmic_text::Align {
     }
 }
 use bevy::ui::ComputedNode;
+use bevy::ui::ComputedUiRenderTargetInfo;
 use cosmic_text;
 use cosmic_text::Buffer;
 use cosmic_text::Edit;
@@ -197,15 +199,17 @@ pub fn text_input_system(
     fonts: Res<Assets<Font>>,
     mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut text_input_pipeline: ResMut<TextInputPipeline>,
+    rem_size: Res<RemSize>,
     mut text_query: Query<(
         Ref<ComputedNode>,
         Ref<TextFont>,
         &mut TextInputLayoutInfo,
         &mut TextInputBuffer,
         Ref<TextInputNode>,
+        Ref<ComputedUiRenderTargetInfo>,
     )>,
 ) {
-    for (node, text_font, text_input_layout_info, mut editor, input) in text_query.iter_mut() {
+    for (node, text_font, text_input_layout_info, mut editor, input, render_target) in text_query.iter_mut() {
         let layout_info = text_input_layout_info.into_inner();
         if editor.needs_update || text_font.is_changed() || node.is_changed() || input.is_changed()
         {
@@ -214,8 +218,10 @@ pub fn text_input_system(
                 height: Some(node.size().y),
             };
 
+            let logical_viewport_size = render_target.logical_size();
+            let font_size = text_font.font_size.eval(logical_viewport_size, rem_size.0);
             // LineHeight::default() is RelativeToFont(1.2)
-            let line_height = 1.2 * text_font.font_size;
+            let line_height = 1.2 * font_size;
 
             let result = editor.editor.with_buffer_mut(|buffer| {
                 let TextInputPipeline {
@@ -236,7 +242,7 @@ pub fn text_input_system(
                     return Err(TextError::NoSuchFont);
                 };
 
-                let mut metrics = Metrics::new(text_font.font_size, line_height)
+                let mut metrics = Metrics::new(font_size, line_height)
                     .scale(node.inverse_scale_factor().recip());
 
                 metrics.font_size = metrics.font_size.max(0.000001);
@@ -412,6 +418,7 @@ pub fn text_input_prompt_system(
     fonts: Res<Assets<Font>>,
     mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut text_input_pipeline: ResMut<TextInputPipeline>,
+    rem_size: Res<RemSize>,
     mut text_query: Query<(
         Ref<ComputedNode>,
         Ref<TextFont>,
@@ -419,9 +426,10 @@ pub fn text_input_prompt_system(
         &mut TextInputBuffer,
         Ref<TextInputNode>,
         Ref<TextInputPrompt>,
+        Ref<ComputedUiRenderTargetInfo>,
     )>,
 ) {
-    for (node, text_font, text_input_layout_info, mut editor, input, prompt) in
+    for (node, text_font, text_input_layout_info, mut editor, input, prompt, render_target) in
         text_query.iter_mut()
     {
         let layout_info = text_input_layout_info.into_inner();
@@ -454,10 +462,12 @@ pub fn text_input_prompt_system(
 
             let font = prompt.font.as_ref().unwrap_or(text_font.as_ref());
 
+            let logical_viewport_size = render_target.logical_size();
+            let font_size = font.font_size.eval(logical_viewport_size, rem_size.0);
             // LineHeight::default() is RelativeToFont(1.2)
-            let line_height = 1.2 * font.font_size;
+            let line_height = 1.2 * font_size;
 
-            let metrics = Metrics::new(font.font_size, line_height)
+            let metrics = Metrics::new(font_size, line_height)
                 .scale(node.inverse_scale_factor().recip());
 
             if metrics.font_size <= 0. || metrics.line_height <= 0. {
