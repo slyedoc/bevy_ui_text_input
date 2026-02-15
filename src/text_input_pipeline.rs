@@ -23,8 +23,10 @@ use bevy::platform::collections::HashMap;
 use bevy::text::Font;
 use bevy::text::FontAtlas;
 use bevy::text::FontAtlasKey;
+use bevy::text::FontHinting;
 use bevy::text::FontSmoothing;
 use bevy::text::FontSource;
+use bevy::text::GlyphCacheKey;
 use bevy::text::Justify;
 use bevy::text::LineBreak;
 use bevy::text::TextBounds;
@@ -36,9 +38,9 @@ use bevy::text::get_glyph_atlas_info;
 
 fn justify_to_align(justify: Justify) -> cosmic_text::Align {
     match justify {
-        Justify::Left => cosmic_text::Align::Left,
+        Justify::Left | Justify::Start => cosmic_text::Align::Left,
         Justify::Center => cosmic_text::Align::Center,
-        Justify::Right => cosmic_text::Align::Right,
+        Justify::Right | Justify::End => cosmic_text::Align::Right,
         Justify::Justified => cosmic_text::Align::Justified,
     }
 }
@@ -54,7 +56,7 @@ use std::sync::Arc;
 pub struct TextInputPipeline {
     pub(crate) handle_to_font_id_map: HashMap<AssetId<Font>, (cosmic_text::fontdb::ID, Arc<str>)>,
     pub font_system: cosmic_text::FontSystem,
-    pub(crate) swash_cache: cosmic_text::SwashCache,
+    pub(crate) scale_context: swash::scale::ScaleContext,
     pub(crate) font_atlas_sets: HashMap<FontAtlasKey, Vec<FontAtlas>>,
 }
 
@@ -65,7 +67,7 @@ impl Default for TextInputPipeline {
         Self {
             handle_to_font_id_map: Default::default(),
             font_system: cosmic_text::FontSystem::new_with_locale_and_db(locale, db),
-            swash_cache: cosmic_text::SwashCache::new(),
+            scale_context: swash::scale::ScaleContext::new(),
             font_atlas_sets: Default::default(),
         }
     }
@@ -93,7 +95,7 @@ fn load_font_to_fontdb(
                     let font = fonts.get(font_handle.id()).expect(
                         "Tried getting a font that was not available, probably due to not being loaded yet",
                     );
-                    let data = Arc::clone(&font.data);
+                    let data: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(font.data.as_ref().to_vec());
                     let ids = font_system
                         .db_mut()
                         .load_font_source(cosmic_text::fontdb::Source::Binary(data));
@@ -125,7 +127,7 @@ fn load_font_to_fontdb(
                 style: match text_font.style {
                     bevy::text::FontStyle::Normal => cosmic_text::fontdb::Style::Normal,
                     bevy::text::FontStyle::Italic => cosmic_text::fontdb::Style::Italic,
-                    bevy::text::FontStyle::Oblique => cosmic_text::fontdb::Style::Oblique,
+                    bevy::text::FontStyle::Oblique(_) => cosmic_text::fontdb::Style::Oblique,
                 },
             };
             if let Some(face_id) = font_system.db().query(&query) {
@@ -166,7 +168,7 @@ fn load_font_to_fontdb(
                 style: match text_font.style {
                     bevy::text::FontStyle::Normal => cosmic_text::fontdb::Style::Normal,
                     bevy::text::FontStyle::Italic => cosmic_text::fontdb::Style::Italic,
-                    bevy::text::FontStyle::Oblique => cosmic_text::fontdb::Style::Oblique,
+                    bevy::text::FontStyle::Oblique(_) => cosmic_text::fontdb::Style::Oblique,
                 },
             };
             if let Some(face_id) = font_system.db().query(&query) {
@@ -333,30 +335,47 @@ pub fn text_input_system(
 
                             let TextInputPipeline {
                                 font_system,
-                                swash_cache,
+                                scale_context,
                                 font_atlas_sets,
                                 ..
                             } = &mut *text_input_pipeline;
 
+                            let font_atlas_key = FontAtlasKey {
+                                id: {
+                                    use std::hash::{Hash, Hasher};
+                                    let mut hasher = std::hash::DefaultHasher::new();
+                                    physical_glyph.cache_key.font_id.hash(&mut hasher);
+                                    hasher.finish() as u32
+                                },
+                                index: 0,
+                                font_size_bits: physical_glyph.cache_key.font_size_bits,
+                                variations_hash: 0,
+                                hinting: FontHinting::default(),
+                                font_smoothing,
+                            };
+                            let glyph_cache_key = GlyphCacheKey { glyph_id: physical_glyph.cache_key.glyph_id };
+
                             let font_atlases = font_atlas_sets
-                                .entry(FontAtlasKey {
-                                    id: physical_glyph.cache_key.font_id,
-                                    font_size_bits: physical_glyph.cache_key.font_size_bits,
-                                    font_smoothing,
-                                })
+                                .entry(font_atlas_key)
                                 .or_default();
 
-                            let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
+                            let atlas_info = get_glyph_atlas_info(font_atlases, glyph_cache_key)
                                 .map(Ok)
                                 .unwrap_or_else(|| {
+                                    let font = font_system.get_font(physical_glyph.cache_key.font_id, physical_glyph.cache_key.font_weight).ok_or(TextError::NoSuchFont)?;
+                                    let font_ref = font.as_swash();
+                                    let mut scaler = scale_context
+                                        .builder(font_ref)
+                                        .size(f32::from_bits(physical_glyph.cache_key.font_size_bits))
+                                        .hint(true)
+                                        .build();
                                     add_glyph_to_atlas(
                                         font_atlases,
                                         &mut texture_atlases,
                                         &mut textures,
-                                        font_system,
-                                        swash_cache,
-                                        layout_glyph,
+                                        &mut scaler,
                                         font_smoothing,
+                                        physical_glyph.cache_key.glyph_id,
                                     )
                                 })?;
 
@@ -551,30 +570,47 @@ pub fn text_input_prompt_system(
 
                         let TextInputPipeline {
                             font_system,
-                            swash_cache,
+                            scale_context,
                             font_atlas_sets,
                             ..
                         } = &mut *text_input_pipeline;
 
+                        let font_atlas_key = FontAtlasKey {
+                            id: {
+                                    use std::hash::{Hash, Hasher};
+                                    let mut hasher = std::hash::DefaultHasher::new();
+                                    physical_glyph.cache_key.font_id.hash(&mut hasher);
+                                    hasher.finish() as u32
+                                },
+                            index: 0,
+                            font_size_bits: physical_glyph.cache_key.font_size_bits,
+                            variations_hash: 0,
+                            hinting: FontHinting::default(),
+                            font_smoothing,
+                        };
+                        let glyph_cache_key = GlyphCacheKey { glyph_id: physical_glyph.cache_key.glyph_id };
+
                         let font_atlases = font_atlas_sets
-                            .entry(FontAtlasKey {
-                                id: physical_glyph.cache_key.font_id,
-                                font_size_bits: physical_glyph.cache_key.font_size_bits,
-                                font_smoothing,
-                            })
+                            .entry(font_atlas_key)
                             .or_default();
 
-                        let atlas_info = get_glyph_atlas_info(font_atlases, physical_glyph.cache_key)
+                        let atlas_info = get_glyph_atlas_info(font_atlases, glyph_cache_key)
                             .map(Ok)
                             .unwrap_or_else(|| {
+                                let font = font_system.get_font(physical_glyph.cache_key.font_id, physical_glyph.cache_key.font_weight).ok_or(TextError::NoSuchFont)?;
+                                let font_ref = font.as_swash();
+                                let mut scaler = scale_context
+                                    .builder(font_ref)
+                                    .size(f32::from_bits(physical_glyph.cache_key.font_size_bits))
+                                    .hint(true)
+                                    .build();
                                 add_glyph_to_atlas(
                                     font_atlases,
                                     &mut texture_atlases,
                                     &mut textures,
-                                    font_system,
-                                    swash_cache,
-                                    layout_glyph,
+                                    &mut scaler,
                                     font_smoothing,
+                                    physical_glyph.cache_key.glyph_id,
                                 )
                             })?;
 
