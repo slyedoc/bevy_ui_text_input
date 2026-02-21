@@ -7,7 +7,6 @@ use crate::TextInputPromptLayoutInfo;
 use crate::TextInputStyle;
 use crate::edit::is_buffer_empty;
 use bevy::asset::AssetId;
-use bevy::asset::Assets;
 use bevy::camera::visibility::InheritedVisibility;
 use bevy::color::Alpha;
 use bevy::color::LinearRgba;
@@ -16,7 +15,6 @@ use bevy::ecs::system::Commands;
 use bevy::ecs::system::Query;
 use bevy::ecs::system::Res;
 use bevy::ecs::system::ResMut;
-use bevy::image::TextureAtlasLayout;
 use bevy::input_focus::InputFocus;
 use bevy::math::Affine2;
 use bevy::math::Rect;
@@ -42,7 +40,6 @@ use cosmic_text::Edit;
 pub fn extract_text_input_nodes(
     mut commands: Commands,
     mut extracted_uinodes: ResMut<ExtractedUiNodes>,
-    texture_atlases: Extract<Res<Assets<TextureAtlasLayout>>>,
     active_text_input: Extract<Res<InputFocus>>,
     uinode_query: Extract<
         Query<(
@@ -183,12 +180,7 @@ pub fn extract_text_input_nodes(
                 color
             };
 
-            let Some(rect) = texture_atlases
-                .get(atlas_info.texture_atlas)
-                .map(|atlas| atlas.textures[atlas_info.location.glyph_index].as_rect())
-            else {
-                continue;
-            };
+            let rect = atlas_info.rect;
 
             extracted_uinodes.glyphs.push(ExtractedGlyph {
                 color: color_out,
@@ -250,7 +242,6 @@ pub fn extract_text_input_nodes(
 pub fn extract_text_input_prompts(
     mut commands: Commands,
     mut extracted_uinodes: ResMut<ExtractedUiNodes>,
-    texture_atlases: Extract<Res<Assets<TextureAtlasLayout>>>,
     uinode_query: Extract<
         Query<(
             Entity,
@@ -324,11 +315,7 @@ pub fn extract_text_input_prompts(
             ..
         } in text_layout_info.glyphs.iter()
         {
-            let rect = texture_atlases
-                .get(atlas_info.texture_atlas)
-                .unwrap()
-                .textures[atlas_info.location.glyph_index]
-                .as_rect();
+            let rect = atlas_info.rect;
             extracted_uinodes.glyphs.push(ExtractedGlyph {
                 color,
                 translation: *position,

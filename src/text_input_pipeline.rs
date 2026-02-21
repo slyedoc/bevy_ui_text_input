@@ -15,7 +15,6 @@ use bevy::ecs::system::Res;
 use bevy::ecs::system::ResMut;
 use bevy::ecs::world::Ref;
 use bevy::image::Image;
-use bevy::image::TextureAtlasLayout;
 use bevy::math::Rect;
 use bevy::math::UVec2;
 use bevy::math::Vec2;
@@ -199,7 +198,6 @@ fn buffer_dimensions(buffer: &cosmic_text::Buffer) -> Vec2 {
 pub fn text_input_system(
     mut textures: ResMut<Assets<Image>>,
     fonts: Res<Assets<Font>>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut text_input_pipeline: ResMut<TextInputPipeline>,
     rem_size: Res<RemSize>,
     mut text_query: Query<(
@@ -371,7 +369,6 @@ pub fn text_input_system(
                                         .build();
                                     add_glyph_to_atlas(
                                         font_atlases,
-                                        &mut texture_atlases,
                                         &mut textures,
                                         &mut scaler,
                                         font_smoothing,
@@ -379,13 +376,10 @@ pub fn text_input_system(
                                     )
                                 })?;
 
-                            let texture_atlas =
-                                texture_atlases.get(atlas_info.texture_atlas).unwrap();
-                            let location = atlas_info.location;
-                            let glyph_rect = texture_atlas.textures[location.glyph_index];
-                            let left = location.offset.x as f32;
-                            let top = location.offset.y as f32;
-                            let glyph_size = UVec2::new(glyph_rect.width(), glyph_rect.height());
+                            let glyph_rect = atlas_info.rect;
+                            let left = atlas_info.offset.x;
+                            let top = atlas_info.offset.y;
+                            let glyph_size = UVec2::new(glyph_rect.width() as u32, glyph_rect.height() as u32);
 
                             // offset by half the size because the origin is center
                             let x = glyph_size.x as f32 / 2.0 + left + physical_glyph.x as f32;
@@ -435,7 +429,6 @@ pub fn text_input_system(
 pub fn text_input_prompt_system(
     mut textures: ResMut<Assets<Image>>,
     fonts: Res<Assets<Font>>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut text_input_pipeline: ResMut<TextInputPipeline>,
     rem_size: Res<RemSize>,
     mut text_query: Query<(
@@ -606,7 +599,6 @@ pub fn text_input_prompt_system(
                                     .build();
                                 add_glyph_to_atlas(
                                     font_atlases,
-                                    &mut texture_atlases,
                                     &mut textures,
                                     &mut scaler,
                                     font_smoothing,
@@ -614,12 +606,10 @@ pub fn text_input_prompt_system(
                                 )
                             })?;
 
-                        let texture_atlas = texture_atlases.get(atlas_info.texture_atlas).unwrap();
-                        let location = atlas_info.location;
-                        let glyph_rect = texture_atlas.textures[location.glyph_index];
-                        let left = location.offset.x as f32;
-                        let top = location.offset.y as f32;
-                        let glyph_size = UVec2::new(glyph_rect.width(), glyph_rect.height());
+                        let glyph_rect = atlas_info.rect;
+                        let left = atlas_info.offset.x;
+                        let top = atlas_info.offset.y;
+                        let glyph_size = UVec2::new(glyph_rect.width() as u32, glyph_rect.height() as u32);
 
                         // offset by half the size because the origin is center
                         let x = glyph_size.x as f32 / 2.0 + left + physical_glyph.x as f32;
