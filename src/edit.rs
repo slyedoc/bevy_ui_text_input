@@ -116,7 +116,7 @@ pub(crate) fn on_drag_text_input(
     }
 
     if input_focus
-        .0
+        .get()
         .is_none_or(|input_focus_entity| input_focus_entity != trigger.entity)
     {
         return;
